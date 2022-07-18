@@ -9,7 +9,7 @@ use crate::{
             outer_aggregate_split_replacer, outer_projection_split_replacer, projection,
             projection_expr, projection_expr_empty_tail, rewrite, rewriter::RewriteRules,
             rules::members::MemberRules, transforming_chain_rewrite, transforming_rewrite,
-            AggregateFunctionExprFun, AliasExprAlias, BinaryExprOp, ColumnExprColumn,
+            udf_expr, AggregateFunctionExprFun, AliasExprAlias, BinaryExprOp, ColumnExprColumn,
             CubeScanTableName, InnerAggregateSplitReplacerCube, LiteralExprValue,
             LogicalPlanLanguage, OuterAggregateSplitReplacerCube, OuterProjectionSplitReplacerCube,
             ProjectionAlias, TableScanSourceTableName,
@@ -673,6 +673,29 @@ impl RewriteRules for SplitRules {
                         outer_aggregate_split_replacer("?expr", "?cube"),
                         "?from".to_string(),
                         "?to".to_string(),
+                    ],
+                ),
+            ),
+            // ToChar
+            rewrite(
+                "split-push-down-to-char-inner-replacer",
+                inner_aggregate_split_replacer(
+                    udf_expr("to_char", vec!["?expr", "?format"]),
+                    "?cube",
+                ),
+                inner_aggregate_split_replacer("?expr", "?cube"),
+            ),
+            rewrite(
+                "split-push-down-to-char-outer-aggr-replacer",
+                outer_aggregate_split_replacer(
+                    udf_expr("to_char", vec!["?expr", "?format"]),
+                    "?cube",
+                ),
+                udf_expr(
+                    "to_char",
+                    vec![
+                        outer_aggregate_split_replacer("?expr", "?cube"),
+                        "?format".to_string(),
                     ],
                 ),
             ),
