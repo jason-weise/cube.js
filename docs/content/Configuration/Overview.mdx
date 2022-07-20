@@ -57,6 +57,24 @@ module.exports = {
 Please consult the Configuration Reference [for more
 options][link-config-cors-opts].
 
+## Concurrency and pooling
+
+<InfoBox>
+
+All Cube database drivers come with presets for concurreny and pooling that work out-of-the-box.
+The following information is included as a reference.
+
+</InfoBox>
+
+For increased performance, Cube uses multiple concurrent connections to configured
+data sources.
+
+Internally, Cube uses two queues that manage database requests; one
+for API queries and one for pre-aggregations. The number of concurrent database
+connections for each queue can be set by the `CUBEJS_CONCURRENCY` environment variable.
+To limit the maximum number of concurrent connections to the database, the `CUBEJS_DB_MAX_POOL`
+environment variable can also be used.
+
 ## Migrating from Express to Docker
 
 Since [`v0.23`][link-v-023-release], Cube.js CLI uses the `docker` template
