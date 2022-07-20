@@ -5,14 +5,16 @@ use crate::{
             agg_fun_expr, aggr_aggr_expr, aggr_aggr_expr_empty_tail, aggr_group_expr,
             aggr_group_expr_empty_tail, aggregate, alias_expr, analysis::LogicalPlanAnalysis,
             binary_expr, cast_expr, column_expr, cube_scan, fun_expr,
+            group_aggregate_split_replacer, group_expr_split_replacer,
             inner_aggregate_split_replacer, literal_expr, literal_string, original_expr_name,
             outer_aggregate_split_replacer, outer_projection_split_replacer, projection,
             projection_expr, projection_expr_empty_tail, rewrite, rewriter::RewriteRules,
             rules::members::MemberRules, transforming_chain_rewrite, transforming_rewrite,
             AggregateFunctionExprFun, AliasExprAlias, BinaryExprOp, ColumnExprColumn,
-            CubeScanTableName, InnerAggregateSplitReplacerCube, LiteralExprValue,
-            LogicalPlanLanguage, OuterAggregateSplitReplacerCube, OuterProjectionSplitReplacerCube,
-            ProjectionAlias, TableScanSourceTableName,
+            CubeScanTableName, GroupAggregateSplitReplacerCube, GroupExprSplitReplacerCube,
+            InnerAggregateSplitReplacerCube, LiteralExprValue, LogicalPlanLanguage,
+            OuterAggregateSplitReplacerCube, OuterProjectionSplitReplacerCube, ProjectionAlias,
+            TableScanSourceTableName,
         },
     },
     transport::V1CubeMetaExt,
@@ -126,7 +128,7 @@ impl RewriteRules for SplitRules {
             ),
             // TODO: Aggregation on top of Projection to re-aggregate results after projection modifying
             transforming_rewrite(
-                "split-projection-projection-aggr",
+                "split-reaggregate-projection",
                 projection(
                     "?expr",
                     cube_scan(
@@ -142,8 +144,8 @@ impl RewriteRules for SplitRules {
                     ),
                     "?alias",
                 ),
-                projection(
-                    outer_aggregate_split_replacer("?expr", "?outer_aggregate_cube"),
+                aggregate(
+                    //input
                     projection(
                         inner_aggregate_split_replacer("?expr", "?inner_aggregate_cube"),
                         cube_scan(
@@ -159,13 +161,17 @@ impl RewriteRules for SplitRules {
                         ),
                         "?projection_alias",
                     ),
-                    "?alias",
+                    // group
+                    group_expr_split_replacer("?expr", "?group_expr_cube"),
+                    // aggr
+                    group_aggregate_split_replacer("?expr", "?group_aggregate_cube"),
                 ),
-                self.split_projection_projection_aggregate(
+                self.split_reaggregate_projection(
                     "?source_table_name",
                     "?inner_aggregate_cube",
-                    "?outer_aggregate_cube",
-                    "?table_name",
+                    "?group_expr_cube",
+                    "?group_aggregate_cube",
+                    "?alias",
                     "?projection_alias",
                 ),
             ),
@@ -332,6 +338,33 @@ impl RewriteRules for SplitRules {
                 "split-push-down-projection-outer-aggr-replacer-tail",
                 outer_aggregate_split_replacer(projection_expr_empty_tail(), "?cube"),
                 projection_expr_empty_tail(),
+            ),
+            // Reaggregate replacers
+            rewrite(
+                "split-push-down-reaggregate-group-expr-replacer",
+                group_expr_split_replacer(aggr_group_expr("?left", "?right"), "?cube"),
+                aggr_group_expr(
+                    group_expr_split_replacer("?left", "?cube"),
+                    group_expr_split_replacer("?right", "?cube"),
+                ),
+            ),
+            rewrite(
+                "split-push-down-reaggregate-group-aggregate-replacer",
+                group_aggregate_split_replacer(aggr_aggr_expr("?left", "?right"), "?cube"),
+                aggr_aggr_expr(
+                    group_aggregate_split_replacer("?left", "?cube"),
+                    group_aggregate_split_replacer("?right", "?cube"),
+                ),
+            ),
+            rewrite(
+                "split-push-down-reaggregate-group-expr-replacer-tail",
+                group_expr_split_replacer(aggr_group_expr_empty_tail(), "?cube"),
+                aggr_group_expr_empty_tail(),
+            ),
+            rewrite(
+                "split-push-down-reaggregate-group-aggregate-replacer-tail",
+                group_aggregate_split_replacer(aggr_aggr_expr_empty_tail(), "?cube"),
+                aggr_aggr_expr_empty_tail(),
             ),
             // Members
             // Column rules
@@ -831,17 +864,19 @@ impl SplitRules {
         }
     }
 
-    fn split_projection_projection_aggregate(
+    fn split_reaggregate_projection(
         &self,
         cube_expr_var: &'static str,
         inner_aggregate_cube_expr_var: &'static str,
-        outer_aggregate_cube_expr_var: &'static str,
+        group_expr_cube_expr_var: &'static str,
+        group_aggregate_cube_expr_var: &'static str,
         table_name_var: &'static str,
         projection_alias_var: &'static str,
     ) -> impl Fn(&mut EGraph<LogicalPlanLanguage, LogicalPlanAnalysis>, &mut Subst) -> bool {
         let cube_expr_var = var!(cube_expr_var);
         let inner_aggregate_cube_expr_var = var!(inner_aggregate_cube_expr_var);
-        let outer_aggregate_cube_expr_var = var!(outer_aggregate_cube_expr_var);
+        let group_expr_cube_expr_var = var!(group_expr_cube_expr_var);
+        let group_aggregate_cube_expr_var = var!(group_aggregate_cube_expr_var);
         let table_name_var = var!(table_name_var);
         let projection_alias_var = var!(projection_alias_var);
         move |egraph, subst| {
@@ -864,11 +899,19 @@ impl SplitRules {
                     );
 
                     subst.insert(
-                        outer_aggregate_cube_expr_var,
-                        egraph.add(LogicalPlanLanguage::OuterAggregateSplitReplacerCube(
-                            OuterAggregateSplitReplacerCube(cube.to_string()),
+                        group_expr_cube_expr_var,
+                        egraph.add(LogicalPlanLanguage::GroupExprSplitReplacerCube(
+                            GroupExprSplitReplacerCube(cube.to_string()),
                         )),
                     );
+
+                    subst.insert(
+                        group_aggregate_cube_expr_var,
+                        egraph.add(LogicalPlanLanguage::GroupAggregateSplitReplacerCube(
+                            GroupAggregateSplitReplacerCube(cube.to_string()),
+                        )),
+                    );
+
                     return true;
                 }
             }
