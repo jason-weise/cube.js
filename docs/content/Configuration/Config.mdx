@@ -36,7 +36,7 @@ interface CubejsConfiguration {
   repositoryFactory: (context: RequestContext) => SchemaFileRepository;
   checkAuth: (req: ExpressRequest, authorization: string) => any;
   checkSqlAuth: (req: SQLRequest, user: string) => any;
-  canSwitchSqlUser: (current: string, user: string) => bool;
+  canSwitchSqlUser: (current: string, user: string) => Promise<bool> | bool;
   queryRewrite: (query: object, context: RequestContext) => object;
   preAggregationsSchema: string | ((context: RequestContext) => string);
   schemaVersion: (context: RequestContext) => string;
@@ -326,7 +326,7 @@ For example, you can use `canSwitchSqlUser` to define your custom logic:
 
 ```javascript
 module.exports = {
-  canSwitchSqlUser: (current, username) => {
+  canSwitchSqlUser: async (current, username) => {
     if (current === 'admin') {
         return true;
     }
