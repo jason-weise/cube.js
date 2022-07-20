@@ -375,7 +375,7 @@ Cube's SQL API can also use the Security Context for
 [Dynamic Schema Creation][ref-dynamic-schemas] or [`queryRewrite`][ref-config-queryrewrite] property in your [`cube.js`
 configuration file][ref-config-js].
 
-By default, SQL API uses current user's security context, but there is way how to change it.
+By default, the SQL API uses the current user's Security Context, but this behaviour can be modified so that certain users are allowed to switch. To do this, we must first define which user is allowed to change Security Context:
 
 First, you need to define what user is allowed to change security context:
 
